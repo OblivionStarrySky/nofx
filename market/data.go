@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math"
-	"net/http"
 	"strconv"
 	"strings"
 )
@@ -58,6 +57,8 @@ func Get(symbol string) (*Data, error) {
 	if err != nil {
 		// OI失败不影响整体,使用默认值
 		oiData = &OIData{Latest: 0, Average: 0}
+		// 打印错误日志以便调试
+		fmt.Printf("⚠️ 获取 %s 的OI数据失败: %v\n", symbol, err)
 	}
 
 	// 获取Funding Rate
@@ -293,7 +294,10 @@ func calculateLongerTermData(klines []Kline) *LongerTermData {
 func getOpenInterestData(symbol string) (*OIData, error) {
 	url := fmt.Sprintf("https://fapi.binance.com/fapi/v1/openInterest?symbol=%s", symbol)
 
-	resp, err := http.Get(url)
+	// 创建带代理的HTTP客户端
+	client := NewAPIClient()
+
+	resp, err := client.client.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +330,10 @@ func getOpenInterestData(symbol string) (*OIData, error) {
 func getFundingRate(symbol string) (float64, error) {
 	url := fmt.Sprintf("https://fapi.binance.com/fapi/v1/premiumIndex?symbol=%s", symbol)
 
-	resp, err := http.Get(url)
+	// 创建带代理的HTTP客户端
+	client := NewAPIClient()
+
+	resp, err := client.client.Get(url)
 	if err != nil {
 		return 0, err
 	}

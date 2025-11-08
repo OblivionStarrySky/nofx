@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -19,9 +21,28 @@ type APIClient struct {
 }
 
 func NewAPIClient() *APIClient {
+	// 创建带代理的HTTP客户端
+	proxyURL, err := url.Parse("http://127.0.0.1:7898")
+	if err != nil {
+		log.Printf("⚠️ 代理URL解析失败: %v", err)
+	}
+
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(proxyURL),
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+
 	return &APIClient{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Transport: transport,
+			Timeout:   30 * time.Second,
 		},
 	}
 }

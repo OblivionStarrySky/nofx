@@ -203,7 +203,6 @@ func main() {
 	useDefaultCoins := useDefaultCoinsStr == "true"
 	apiPortStr, _ := database.GetSystemConfig("api_server_port")
 
-
 	// 设置JWT密钥（优先使用环境变量）
 	jwtSecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
 	if jwtSecret == "" {
@@ -313,16 +312,20 @@ func main() {
 	fmt.Println()
 	fmt.Println("⚠️  风险提示: AI自动交易有风险，建议小额资金测试！")
 	fmt.Println()
-	fmt.Println("按 Ctrl+C 停止运行")
+	fmt.Println("按 Ctrl+C 偃止运行")
 	fmt.Println(strings.Repeat("=", 60))
 	fmt.Println()
 
 	// 获取API服务器端口
 	apiPort := 8080 // 默认端口
 	if apiPortStr != "" {
-		if port, err := strconv.Atoi(apiPortStr); err == nil {
+		if port, err := strconv.Atoi(apiPortStr); err == nil && port > 0 {
 			apiPort = port
+		} else {
+			log.Printf("⚠️  环境变量API_PORT值无效: %s, 使用默认端口8080", apiPortStr)
 		}
+	} else {
+		log.Printf("ℹ️  未设置API_PORT环境变量, 使用默认端口8080")
 	}
 
 	// 创建并启动API服务器

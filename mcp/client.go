@@ -216,6 +216,9 @@ func (client *Client) callOnce(systemPrompt, userPrompt string) (string, error) 
 		return "", fmt.Errorf("序列化请求失败: %w", err)
 	}
 
+	// 打印请求参数
+	log.Printf("📤 [MCP] 请求参数: %s", string(jsonData))
+
 	// 创建HTTP请求
 	var url string
 	if client.UseFullURL {
@@ -246,19 +249,36 @@ func (client *Client) callOnce(systemPrompt, userPrompt string) (string, error) 
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", client.APIKey))
 	}
 
+	// 打印请求头
+	log.Printf("-Headers: %+v", req.Header)
+
 	// 发送请求
 	httpClient := &http.Client{Timeout: client.Timeout}
+
+	// 记录请求开始时间
+	startTime := time.Now()
+
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("发送请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
+	// 计算请求耗时
+	duration := time.Since(startTime)
+	log.Printf("⏱️ [MCP] 请求耗时: %v", duration)
+
+	startTime2 := time.Now()
 	// 读取响应
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("读取响应失败: %w", err)
 	}
+	duration2 := time.Since(startTime2)
+	log.Printf("⏱️ [MCP] ReadAll处理耗时: %v", duration2)
+	// 打印响应状态和内容
+	log.Printf("📥 [MCP] 响应状态: %s", resp.Status)
+	log.Printf("📥 [MCP] 响应内容: %s", string(body))
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("API返回错误 (status %d): %s", resp.StatusCode, string(body))
