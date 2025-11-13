@@ -54,7 +54,10 @@ func Get(symbol string) (*Data, error) {
 	currentEMA20 := calculateEMA(klines3m, 20)
 	currentMACD := calculateMACD(klines3m)
 	currentRSI7 := calculateRSI(klines3m, 7)
-	currentADX := calculateADX(klines3m, 14) // 计算14周期ADX
+	// 计算KDJ指标
+	currentKDJ := calculateKDJ(klines3m, 9)
+	// 计算DMI指标
+	currentDMI := calculateDMI(klines3m, 14)
 
 	// 计算价格变化百分比
 	// 1小时价格变化 = 20个3分钟K线前的价格
@@ -101,7 +104,8 @@ func Get(symbol string) (*Data, error) {
 		CurrentEMA20:      currentEMA20,
 		CurrentMACD:       currentMACD,
 		CurrentRSI7:       currentRSI7,
-		CurrentADX:        currentADX,
+		CurrentKDJ:        currentKDJ,
+		CurrentDMI:        currentDMI,
 		OpenInterest:      oiData,
 		FundingRate:       fundingRate,
 		IntradaySeries:    intradayData,
@@ -276,10 +280,10 @@ func calculateDI(dm []float64, tr []float64, period int) []float64 {
 	return di
 }
 
-// calculateADX 计算ADX指标
-func calculateADX(klines []Kline, period int) float64 {
-	if len(klines) < 2*period {
-		return 0
+// calculateDMI 计算DMI指标
+func calculateDMI(klines []Kline, period int) DMIData {
+	if len(klines) <= period {
+		return DMIData{PlusDI: 0, MinusDI: 0, ADX: 0}
 	}
 
 	n := len(klines)
@@ -292,6 +296,7 @@ func calculateADX(klines []Kline, period int) float64 {
 		upMove := klines[i].High - klines[i-1].High
 		downMove := klines[i-1].Low - klines[i].Low
 
+		// 根据DMI标准算法，需要比较upMove和downMove
 		if upMove > downMove && upMove > 0 {
 			plusDM[i] = upMove
 		} else {
@@ -346,61 +351,147 @@ func calculateADX(klines []Kline, period int) float64 {
 		trS[i] = (trS[i-1]*(float64(period)-1) + tr[i]) / float64(period)
 	}
 
-	// 计算+DI和-DI
-	plusDI := make([]float64, n)
-	minusDI := make([]float64, n)
-
-	for i := period; i < n; i++ {
-		if trS[i] != 0 {
-			plusDI[i] = (plusDMS[i] / trS[i]) * 100
-			minusDI[i] = (minusDMS[i] / trS[i]) * 100
-		} else {
-			plusDI[i] = 0
-			minusDI[i] = 0
-		}
+	// 计算+DI和-DI (取最后一个值)
+	var plusDI, minusDI float64
+	if trS[n-1] != 0 {
+		plusDI = (plusDMS[n-1] / trS[n-1]) * 100
+		minusDI = (minusDMS[n-1] / trS[n-1]) * 100
+	} else {
+		plusDI = 0
+		minusDI = 0
 	}
 
 	// 计算DX
 	dx := make([]float64, n)
 	for i := period; i < n; i++ {
-		denominator := plusDI[i] + minusDI[i]
-		if denominator != 0 {
-			dx[i] = (math.Abs(plusDI[i]-minusDI[i]) / denominator) * 100
+		denominator := plusDMS[i] + minusDMS[i]
+		if denominator != 0 && trS[i] != 0 {
+			plusDIValue := (plusDMS[i] / trS[i]) * 100
+			minusDIValue := (minusDMS[i] / trS[i]) * 100
+			dx[i] = (math.Abs(plusDIValue-minusDIValue) / (plusDIValue + minusDIValue)) * 100
 		} else {
 			dx[i] = 0
 		}
 	}
 
 	// 计算ADX
-	adx := make([]float64, n)
+	adxValues := make([]float64, n)
 
 	// 初始SMA
 	sumDX := 0.0
+	count := 0
 	for i := period; i < period*2 && i < n; i++ {
 		sumDX += dx[i]
+		count++
 	}
 
-	if period > 0 && sumDX != 0 {
-		adx[period*2-1] = sumDX / float64(period)
+	if count > 0 {
+		adxValues[period*2-1] = sumDX / float64(count)
 	}
 
 	// Wilder平滑
 	for i := period * 2; i < n; i++ {
-		adx[i] = (adx[i-1]*(float64(period)-1) + dx[i]) / float64(period)
+		if i-1 >= 0 {
+			adxValues[i] = (adxValues[i-1]*(float64(period)-1) + dx[i]) / float64(period)
+		} else {
+			adxValues[i] = dx[i]
+		}
 	}
 
 	// 返回最终值
-	result := adx[n-1]
-	if math.IsNaN(result) || math.IsInf(result, 0) {
-		return 0
+	adx := adxValues[n-1]
+	if math.IsNaN(adx) || math.IsInf(adx, 0) {
+		adx = 0
 	}
 
 	// 确保结果在合理范围内
-	if result > 100 {
-		return 100
+	if adx > 100 {
+		adx = 100
 	}
 
-	return result
+	// 确保结果有效
+	if math.IsNaN(plusDI) || math.IsInf(plusDI, 0) {
+		plusDI = 0
+	}
+
+	if math.IsNaN(minusDI) || math.IsInf(minusDI, 0) {
+		minusDI = 0
+	}
+
+	return DMIData{PlusDI: plusDI, MinusDI: minusDI, ADX: adx}
+}
+
+// calculateKDJ 计算KDJ指标
+func calculateKDJ(klines []Kline, period int) KDJData {
+	if len(klines) < period {
+		return KDJData{K: 0, D: 0, J: 0}
+	}
+
+	// 取最近period个周期的数据
+	startIndex := len(klines) - period
+	recentKlines := klines[startIndex:]
+
+	// 计算周期内的最高价和最低价
+	highestHigh := recentKlines[0].High
+	lowestLow := recentKlines[0].Low
+
+	for _, kline := range recentKlines {
+		if kline.High > highestHigh {
+			highestHigh = kline.High
+		}
+		if kline.Low < lowestLow {
+			lowestLow = kline.Low
+		}
+	}
+
+	// 计算RSV (未成熟随机值)
+	closePrice := recentKlines[len(recentKlines)-1].Close
+	rsv := 0.0
+
+	if highestHigh-lowestLow != 0 {
+		rsv = (closePrice - lowestLow) / (highestHigh - lowestLow) * 100
+	} else {
+		// 如果最高价等于最低价，RSV设为0
+		rsv = 0.0
+	}
+
+	// 计算K值和D值
+	// 使用递归方式计算前一个KDJ值作为初始值
+	var k, d float64
+	if len(klines) > period {
+		// 使用前一个KDJ值作为初始值
+		prevKDJ := calculateKDJ(klines[:len(klines)-1], period)
+		k = (2.0/3.0)*prevKDJ.K + (1.0/3.0)*rsv
+		d = (2.0/3.0)*prevKDJ.D + (1.0/3.0)*k
+	} else {
+		// 没有足够的历史数据，使用50作为初始值
+		k = (2.0/3.0)*50.0 + (1.0/3.0)*rsv
+		d = (2.0/3.0)*50.0 + (1.0/3.0)*k
+	}
+
+	// 计算J值: J = 3 * K - 2 * D
+	j := 3*k - 2*d
+
+	// 限制范围在0-100之间
+	if k > 100 {
+		k = 100
+	} else if k < 0 {
+		k = 0
+	}
+
+	if d > 100 {
+		d = 100
+	} else if d < 0 {
+		d = 0
+	}
+
+	if j > 100 {
+		j = 100
+	} else if j < 0 {
+		j = 0
+	}
+
+	return KDJData{K: k, D: d, J: j}
 }
 
 // calculateIntradaySeries 计算日内系列数据
@@ -411,7 +502,8 @@ func calculateIntradaySeries(klines []Kline) *IntradayData {
 		MACDValues:  make([]float64, 0, 10),
 		RSI7Values:  make([]float64, 0, 10),
 		RSI14Values: make([]float64, 0, 10),
-		ADXValues:   make([]float64, 0, 10), // 添加ADX值序列
+		KDJValues:   make([]KDJData, 0, 10), // KDJ值序列
+		DMIValues:   make([]DMIData, 0, 10), // DMI值序列
 	}
 
 	// 获取最近10个数据点
@@ -445,10 +537,16 @@ func calculateIntradaySeries(klines []Kline) *IntradayData {
 			data.RSI14Values = append(data.RSI14Values, rsi14)
 		}
 
-		// 计算每个点的ADX
-		if i >= 28 { // ADX需要至少2*period个数据点
-			adx := calculateADX(klines[:i+1], 14)
-			data.ADXValues = append(data.ADXValues, adx)
+		// 计算每个点的KDJ
+		if i >= 9 { // KDJ需要至少period个数据点
+			kdj := calculateKDJ(klines[:i+1], 9)
+			data.KDJValues = append(data.KDJValues, kdj)
+		}
+
+		// 计算每个点的DMI
+		if i >= 28 { // DMI需要至少2*period个数据点
+			dmi := calculateDMI(klines[:i+1], 14)
+			data.DMIValues = append(data.DMIValues, dmi)
 		}
 	}
 
@@ -458,9 +556,8 @@ func calculateIntradaySeries(klines []Kline) *IntradayData {
 // calculateLongerTermData 计算长期数据
 func calculateLongerTermData(klines []Kline) *LongerTermData {
 	data := &LongerTermData{
-		MACDValues:  make([]float64, 0, 10),
-		RSI14Values: make([]float64, 0, 10),
-		ADXValues:   make([]float64, 0, 10), // 添加ADX值序列
+		KDJValues: make([]KDJData, 0, 10), // KDJ值序列
+		DMIValues: make([]DMIData, 0, 10), // DMI值序列
 	}
 
 	// 计算EMA
@@ -497,9 +594,13 @@ func calculateLongerTermData(klines []Kline) *LongerTermData {
 			rsi14 := calculateRSI(klines[:i+1], 14)
 			data.RSI14Values = append(data.RSI14Values, rsi14)
 		}
-		if i >= 28 { // ADX需要至少2*period个数据点
-			adx := calculateADX(klines[:i+1], 14)
-			data.ADXValues = append(data.ADXValues, adx)
+		if i >= 9 { // KDJ需要至少period个数据点
+			kdj := calculateKDJ(klines[:i+1], 9)
+			data.KDJValues = append(data.KDJValues, kdj)
+		}
+		if i >= 28 { // DMI需要至少2*period个数据点
+			dmi := calculateDMI(klines[:i+1], 14)
+			data.DMIValues = append(data.DMIValues, dmi)
 		}
 	}
 
@@ -602,8 +703,14 @@ func Format(data *Data) string {
 
 	// 使用动态精度格式化价格
 	priceStr := formatPriceWithDynamicPrecision(data.CurrentPrice)
-	sb.WriteString(fmt.Sprintf("current_price = %s, current_ema20 = %.3f, current_macd = %.3f, current_rsi (7 period) = %.3f, current_adx (14 period) = %.3f\n\n",
-		priceStr, data.CurrentEMA20, data.CurrentMACD, data.CurrentRSI7, data.CurrentADX))
+	sb.WriteString(fmt.Sprintf("current_price = %s, current_ema20 = %.3f, current_macd = %.3f, current_rsi (7 period) = %.3f\n\n",
+		priceStr, data.CurrentEMA20, data.CurrentMACD, data.CurrentRSI7))
+
+	// 添加KDJ和DMI指标显示
+	sb.WriteString(fmt.Sprintf("KDJ indicator (9 period): K = %.3f, D = %.3f, J = %.3f\n",
+		data.CurrentKDJ.K, data.CurrentKDJ.D, data.CurrentKDJ.J))
+	sb.WriteString(fmt.Sprintf("DMI indicator (14 period): +DI = %.3f, -DI = %.3f, ADX = %.3f\n\n",
+		data.CurrentDMI.PlusDI, data.CurrentDMI.MinusDI, data.CurrentDMI.ADX))
 
 	sb.WriteString(fmt.Sprintf("In addition, here is the latest %s open interest and funding rate for perps:\n\n",
 		data.Symbol))
@@ -641,8 +748,37 @@ func Format(data *Data) string {
 			sb.WriteString(fmt.Sprintf("RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.IntradaySeries.RSI14Values)))
 		}
 
-		if len(data.IntradaySeries.ADXValues) > 0 {
-			sb.WriteString(fmt.Sprintf("ADX indicators (14‑Period): %s\n\n", formatFloatSlice(data.IntradaySeries.ADXValues)))
+		// 添加KDJ和DMI序列显示
+		if len(data.IntradaySeries.KDJValues) > 0 {
+			kValues := make([]float64, len(data.IntradaySeries.KDJValues))
+			dValues := make([]float64, len(data.IntradaySeries.KDJValues))
+			jValues := make([]float64, len(data.IntradaySeries.KDJValues))
+
+			for i, kdj := range data.IntradaySeries.KDJValues {
+				kValues[i] = kdj.K
+				dValues[i] = kdj.D
+				jValues[i] = kdj.J
+			}
+
+			sb.WriteString(fmt.Sprintf("KDJ K values (9‑Period): %s\n\n", formatFloatSlice(kValues)))
+			sb.WriteString(fmt.Sprintf("KDJ D values (9‑Period): %s\n\n", formatFloatSlice(dValues)))
+			sb.WriteString(fmt.Sprintf("KDJ J values (9‑Period): %s\n\n", formatFloatSlice(jValues)))
+		}
+
+		if len(data.IntradaySeries.DMIValues) > 0 {
+			plusDIValues := make([]float64, len(data.IntradaySeries.DMIValues))
+			minusDIValues := make([]float64, len(data.IntradaySeries.DMIValues))
+			adxValues := make([]float64, len(data.IntradaySeries.DMIValues))
+
+			for i, dmi := range data.IntradaySeries.DMIValues {
+				plusDIValues[i] = dmi.PlusDI
+				minusDIValues[i] = dmi.MinusDI
+				adxValues[i] = dmi.ADX
+			}
+
+			sb.WriteString(fmt.Sprintf("+DI values (14‑Period): %s\n\n", formatFloatSlice(plusDIValues)))
+			sb.WriteString(fmt.Sprintf("-DI values (14‑Period): %s\n\n", formatFloatSlice(minusDIValues)))
+			sb.WriteString(fmt.Sprintf("ADX values (14‑Period): %s\n\n", formatFloatSlice(adxValues)))
 		}
 	}
 
@@ -666,8 +802,37 @@ func Format(data *Data) string {
 			sb.WriteString(fmt.Sprintf("RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.LongerTermContext.RSI14Values)))
 		}
 
-		if len(data.LongerTermContext.ADXValues) > 0 {
-			sb.WriteString(fmt.Sprintf("ADX indicators (14‑Period): %s\n\n", formatFloatSlice(data.LongerTermContext.ADXValues)))
+		// 添加KDJ和DMI序列显示
+		if len(data.LongerTermContext.KDJValues) > 0 {
+			kValues := make([]float64, len(data.LongerTermContext.KDJValues))
+			dValues := make([]float64, len(data.LongerTermContext.KDJValues))
+			jValues := make([]float64, len(data.LongerTermContext.KDJValues))
+
+			for i, kdj := range data.LongerTermContext.KDJValues {
+				kValues[i] = kdj.K
+				dValues[i] = kdj.D
+				jValues[i] = kdj.J
+			}
+
+			sb.WriteString(fmt.Sprintf("KDJ K values (9‑Period): %s\n\n", formatFloatSlice(kValues)))
+			sb.WriteString(fmt.Sprintf("KDJ D values (9‑Period): %s\n\n", formatFloatSlice(dValues)))
+			sb.WriteString(fmt.Sprintf("KDJ J values (9‑Period): %s\n\n", formatFloatSlice(jValues)))
+		}
+
+		if len(data.LongerTermContext.DMIValues) > 0 {
+			plusDIValues := make([]float64, len(data.LongerTermContext.DMIValues))
+			minusDIValues := make([]float64, len(data.LongerTermContext.DMIValues))
+			adxValues := make([]float64, len(data.LongerTermContext.DMIValues))
+
+			for i, dmi := range data.LongerTermContext.DMIValues {
+				plusDIValues[i] = dmi.PlusDI
+				minusDIValues[i] = dmi.MinusDI
+				adxValues[i] = dmi.ADX
+			}
+
+			sb.WriteString(fmt.Sprintf("+DI values (14‑Period): %s\n\n", formatFloatSlice(plusDIValues)))
+			sb.WriteString(fmt.Sprintf("-DI values (14‑Period): %s\n\n", formatFloatSlice(minusDIValues)))
+			sb.WriteString(fmt.Sprintf("ADX values (14‑Period): %s\n\n", formatFloatSlice(adxValues)))
 		}
 	}
 

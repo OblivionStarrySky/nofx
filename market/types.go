@@ -11,11 +11,26 @@ type Data struct {
 	CurrentEMA20      float64
 	CurrentMACD       float64
 	CurrentRSI7       float64
-	CurrentADX        float64 // ADX指标
+	CurrentKDJ        KDJData // KDJ指标
+	CurrentDMI        DMIData // DMI指标
 	OpenInterest      *OIData
 	FundingRate       float64
 	IntradaySeries    *IntradayData
 	LongerTermContext *LongerTermData
+}
+
+// KDJData KDJ指标数据
+type KDJData struct {
+	K float64
+	D float64
+	J float64
+}
+
+// DMIData DMI指标数据
+type DMIData struct {
+	PlusDI  float64
+	MinusDI float64
+	ADX     float64
 }
 
 // OIData Open Interest数据
@@ -31,7 +46,8 @@ type IntradayData struct {
 	MACDValues  []float64
 	RSI7Values  []float64
 	RSI14Values []float64
-	ADXValues   []float64 // ADX指标序列
+	KDJValues   []KDJData // KDJ指标序列
+	DMIValues   []DMIData // DMI指标序列
 }
 
 // LongerTermData 长期数据(4小时时间框架)
@@ -44,7 +60,8 @@ type LongerTermData struct {
 	AverageVolume float64
 	MACDValues    []float64
 	RSI14Values   []float64
-	ADXValues     []float64 // ADX指标序列
+	KDJValues     []KDJData // KDJ指标序列
+	DMIValues     []DMIData // DMI指标序列
 }
 
 // Binance API 响应结构
