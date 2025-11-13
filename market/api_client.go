@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"nofx/hook"
 	"net/url"
 	"strconv"
 	"time"
@@ -40,24 +39,14 @@ func NewAPIClient() *APIClient {
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second,
+	}
+
 	return &APIClient{
-		client: &http.Client{
-			Transport: transport,
-			Timeout:   30 * time.Second,
-		},
-	//client := &http.Client{
-	//	Timeout: 30 * time.Second,
-	//}
-	//
-	//hookRes := hook.HookExec[hook.SetHttpClientResult](hook.SET_HTTP_CLIENT, client)
-	//if hookRes != nil && hookRes.Error() == nil {
-	//	log.Printf("使用Hook设置的HTTP客户端")
-	//	client = hookRes.GetResult()
-	//}
-	//
-	//return &APIClient{
-	//	client: client,
-	//}
+		client: client,
+	}
 }
 
 func (c *APIClient) GetExchangeInfo() (*ExchangeInfo, error) {

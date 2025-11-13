@@ -11,6 +11,7 @@ type Data struct {
 	CurrentEMA20      float64
 	CurrentMACD       float64
 	CurrentRSI7       float64
+	CurrentADX        float64 // ADX指标
 	OpenInterest      *OIData
 	FundingRate       float64
 	IntradaySeries    *IntradayData
@@ -30,6 +31,7 @@ type IntradayData struct {
 	MACDValues  []float64
 	RSI7Values  []float64
 	RSI14Values []float64
+	ADXValues   []float64 // ADX指标序列
 }
 
 // LongerTermData 长期数据(4小时时间框架)
@@ -42,6 +44,7 @@ type LongerTermData struct {
 	AverageVolume float64
 	MACDValues    []float64
 	RSI14Values   []float64
+	ADXValues     []float64 // ADX指标序列
 }
 
 // Binance API 响应结构

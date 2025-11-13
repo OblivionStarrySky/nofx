@@ -54,6 +54,7 @@ func Get(symbol string) (*Data, error) {
 	currentEMA20 := calculateEMA(klines3m, 20)
 	currentMACD := calculateMACD(klines3m)
 	currentRSI7 := calculateRSI(klines3m, 7)
+	currentADX := calculateADX(klines3m, 14) // 计算14周期ADX
 
 	// 计算价格变化百分比
 	// 1小时价格变化 = 20个3分钟K线前的价格
@@ -100,6 +101,7 @@ func Get(symbol string) (*Data, error) {
 		CurrentEMA20:      currentEMA20,
 		CurrentMACD:       currentMACD,
 		CurrentRSI7:       currentRSI7,
+		CurrentADX:        currentADX,
 		OpenInterest:      oiData,
 		FundingRate:       fundingRate,
 		IntradaySeries:    intradayData,
@@ -221,6 +223,186 @@ func calculateATR(klines []Kline, period int) float64 {
 	return atr
 }
 
+// calculateDM 计算方向运动值
+func calculateDM(klines []Kline) ([]float64, []float64) {
+	plusDM := make([]float64, len(klines))
+	minusDM := make([]float64, len(klines))
+
+	for i := 1; i < len(klines); i++ {
+		upMove := klines[i].High - klines[i-1].High
+		downMove := klines[i-1].Low - klines[i].Low
+
+		if upMove > downMove && upMove > 0 {
+			plusDM[i] = upMove
+		} else {
+			plusDM[i] = 0
+		}
+
+		if downMove > upMove && downMove > 0 {
+			minusDM[i] = downMove
+		} else {
+			minusDM[i] = 0
+		}
+	}
+
+	return plusDM, minusDM
+}
+
+// calculateDI 计算方向指标
+func calculateDI(dm []float64, tr []float64, period int) []float64 {
+	di := make([]float64, len(dm))
+
+	// 计算初始DM和TR的平均值
+	sumDM := 0.0
+	sumTR := 0.0
+
+	for i := 1; i <= period; i++ {
+		sumDM += dm[i]
+		sumTR += tr[i]
+	}
+
+	// Wilder平滑
+	if sumTR != 0 {
+		di[period] = (sumDM / sumTR) * 100
+	}
+
+	for i := period + 1; i < len(dm); i++ {
+		di[i] = ((di[i-1]*float64(period-1) + dm[i]) / float64(period)) * 100
+		if tr[i] != 0 {
+			di[i] = di[i] / tr[i] * 100
+		}
+	}
+
+	return di
+}
+
+// calculateADX 计算ADX指标
+func calculateADX(klines []Kline, period int) float64 {
+	if len(klines) < 2*period {
+		return 0
+	}
+
+	n := len(klines)
+
+	// 计算+DM和-DM
+	plusDM := make([]float64, n)
+	minusDM := make([]float64, n)
+
+	for i := 1; i < n; i++ {
+		upMove := klines[i].High - klines[i-1].High
+		downMove := klines[i-1].Low - klines[i].Low
+
+		if upMove > downMove && upMove > 0 {
+			plusDM[i] = upMove
+		} else {
+			plusDM[i] = 0
+		}
+
+		if downMove > upMove && downMove > 0 {
+			minusDM[i] = downMove
+		} else {
+			minusDM[i] = 0
+		}
+	}
+
+	// 计算TR
+	tr := make([]float64, n)
+	for i := 1; i < n; i++ {
+		high := klines[i].High
+		low := klines[i].Low
+		prevClose := klines[i-1].Close
+
+		tr1 := high - low
+		tr2 := math.Abs(high - prevClose)
+		tr3 := math.Abs(low - prevClose)
+
+		tr[i] = math.Max(tr1, math.Max(tr2, tr3))
+	}
+
+	// 计算平滑的+DM、-DM和TR (Wilder平滑)
+	plusDMS := make([]float64, n)
+	minusDMS := make([]float64, n)
+	trS := make([]float64, n)
+
+	// 初始SMA
+	sumPlusDM := 0.0
+	sumMinusDM := 0.0
+	sumTR := 0.0
+
+	for i := 1; i <= period; i++ {
+		sumPlusDM += plusDM[i]
+		sumMinusDM += minusDM[i]
+		sumTR += tr[i]
+	}
+
+	plusDMS[period] = sumPlusDM
+	minusDMS[period] = sumMinusDM
+	trS[period] = sumTR
+
+	// Wilder平滑: (prior * (n-1) + current) / n
+	for i := period + 1; i < n; i++ {
+		plusDMS[i] = (plusDMS[i-1]*(float64(period)-1) + plusDM[i]) / float64(period)
+		minusDMS[i] = (minusDMS[i-1]*(float64(period)-1) + minusDM[i]) / float64(period)
+		trS[i] = (trS[i-1]*(float64(period)-1) + tr[i]) / float64(period)
+	}
+
+	// 计算+DI和-DI
+	plusDI := make([]float64, n)
+	minusDI := make([]float64, n)
+
+	for i := period; i < n; i++ {
+		if trS[i] != 0 {
+			plusDI[i] = (plusDMS[i] / trS[i]) * 100
+			minusDI[i] = (minusDMS[i] / trS[i]) * 100
+		} else {
+			plusDI[i] = 0
+			minusDI[i] = 0
+		}
+	}
+
+	// 计算DX
+	dx := make([]float64, n)
+	for i := period; i < n; i++ {
+		denominator := plusDI[i] + minusDI[i]
+		if denominator != 0 {
+			dx[i] = (math.Abs(plusDI[i]-minusDI[i]) / denominator) * 100
+		} else {
+			dx[i] = 0
+		}
+	}
+
+	// 计算ADX
+	adx := make([]float64, n)
+
+	// 初始SMA
+	sumDX := 0.0
+	for i := period; i < period*2 && i < n; i++ {
+		sumDX += dx[i]
+	}
+
+	if period > 0 && sumDX != 0 {
+		adx[period*2-1] = sumDX / float64(period)
+	}
+
+	// Wilder平滑
+	for i := period * 2; i < n; i++ {
+		adx[i] = (adx[i-1]*(float64(period)-1) + dx[i]) / float64(period)
+	}
+
+	// 返回最终值
+	result := adx[n-1]
+	if math.IsNaN(result) || math.IsInf(result, 0) {
+		return 0
+	}
+
+	// 确保结果在合理范围内
+	if result > 100 {
+		return 100
+	}
+
+	return result
+}
+
 // calculateIntradaySeries 计算日内系列数据
 func calculateIntradaySeries(klines []Kline) *IntradayData {
 	data := &IntradayData{
@@ -229,6 +411,7 @@ func calculateIntradaySeries(klines []Kline) *IntradayData {
 		MACDValues:  make([]float64, 0, 10),
 		RSI7Values:  make([]float64, 0, 10),
 		RSI14Values: make([]float64, 0, 10),
+		ADXValues:   make([]float64, 0, 10), // 添加ADX值序列
 	}
 
 	// 获取最近10个数据点
@@ -261,6 +444,12 @@ func calculateIntradaySeries(klines []Kline) *IntradayData {
 			rsi14 := calculateRSI(klines[:i+1], 14)
 			data.RSI14Values = append(data.RSI14Values, rsi14)
 		}
+
+		// 计算每个点的ADX
+		if i >= 28 { // ADX需要至少2*period个数据点
+			adx := calculateADX(klines[:i+1], 14)
+			data.ADXValues = append(data.ADXValues, adx)
+		}
 	}
 
 	return data
@@ -271,6 +460,7 @@ func calculateLongerTermData(klines []Kline) *LongerTermData {
 	data := &LongerTermData{
 		MACDValues:  make([]float64, 0, 10),
 		RSI14Values: make([]float64, 0, 10),
+		ADXValues:   make([]float64, 0, 10), // 添加ADX值序列
 	}
 
 	// 计算EMA
@@ -306,6 +496,10 @@ func calculateLongerTermData(klines []Kline) *LongerTermData {
 		if i >= 14 {
 			rsi14 := calculateRSI(klines[:i+1], 14)
 			data.RSI14Values = append(data.RSI14Values, rsi14)
+		}
+		if i >= 28 { // ADX需要至少2*period个数据点
+			adx := calculateADX(klines[:i+1], 14)
+			data.ADXValues = append(data.ADXValues, adx)
 		}
 	}
 
@@ -408,8 +602,8 @@ func Format(data *Data) string {
 
 	// 使用动态精度格式化价格
 	priceStr := formatPriceWithDynamicPrecision(data.CurrentPrice)
-	sb.WriteString(fmt.Sprintf("current_price = %s, current_ema20 = %.3f, current_macd = %.3f, current_rsi (7 period) = %.3f\n\n",
-		priceStr, data.CurrentEMA20, data.CurrentMACD, data.CurrentRSI7))
+	sb.WriteString(fmt.Sprintf("current_price = %s, current_ema20 = %.3f, current_macd = %.3f, current_rsi (7 period) = %.3f, current_adx (14 period) = %.3f\n\n",
+		priceStr, data.CurrentEMA20, data.CurrentMACD, data.CurrentRSI7, data.CurrentADX))
 
 	sb.WriteString(fmt.Sprintf("In addition, here is the latest %s open interest and funding rate for perps:\n\n",
 		data.Symbol))
@@ -446,6 +640,10 @@ func Format(data *Data) string {
 		if len(data.IntradaySeries.RSI14Values) > 0 {
 			sb.WriteString(fmt.Sprintf("RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.IntradaySeries.RSI14Values)))
 		}
+
+		if len(data.IntradaySeries.ADXValues) > 0 {
+			sb.WriteString(fmt.Sprintf("ADX indicators (14‑Period): %s\n\n", formatFloatSlice(data.IntradaySeries.ADXValues)))
+		}
 	}
 
 	if data.LongerTermContext != nil {
@@ -466,6 +664,10 @@ func Format(data *Data) string {
 
 		if len(data.LongerTermContext.RSI14Values) > 0 {
 			sb.WriteString(fmt.Sprintf("RSI indicators (14‑Period): %s\n\n", formatFloatSlice(data.LongerTermContext.RSI14Values)))
+		}
+
+		if len(data.LongerTermContext.ADXValues) > 0 {
+			sb.WriteString(fmt.Sprintf("ADX indicators (14‑Period): %s\n\n", formatFloatSlice(data.LongerTermContext.ADXValues)))
 		}
 	}
 
