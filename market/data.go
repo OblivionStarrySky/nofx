@@ -389,7 +389,7 @@ func calculateDMI(klines []Kline, period int) DMIData {
 	dx := make([]float64, n)
 	for i := period; i < n; i++ {
 		denominator := plusDMS[i] + minusDMS[i]
-		if denominator != 0 && trS[i] != 0 {
+		if denominator != 0 {
 			plusDIValue := (plusDMS[i] / trS[i]) * 100
 			minusDIValue := (minusDMS[i] / trS[i]) * 100
 			dx[i] = (math.Abs(plusDIValue-minusDIValue) / (plusDIValue + minusDIValue)) * 100
