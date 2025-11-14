@@ -25,14 +25,14 @@ var (
 
 // Get 获取指定代币的市场数据
 func Get(symbol string) (*Data, error) {
-	var klines3m, klines4h []Kline
+	var klines5m, klines4h []Kline
 	var err error
 	// 标准化symbol
 	symbol = Normalize(symbol)
-	// 获取3分钟K线数据 (最近10个)
-	klines3m, err = WSMonitorCli.GetCurrentKlines(symbol, "3m") // 多获取一些用于计算
+	// 获取5分钟K线数据 (最近10个)
+	klines5m, err = WSMonitorCli.GetCurrentKlines(symbol, "5m") // 多获取一些用于计算
 	if err != nil {
-		return nil, fmt.Errorf("获取3分钟K线失败: %v", err)
+		return nil, fmt.Errorf("获取5分钟K线失败: %v", err)
 	}
 
 	// 获取4小时K线数据 (最近10个)
@@ -42,28 +42,36 @@ func Get(symbol string) (*Data, error) {
 	}
 
 	// 检查数据是否为空
-	if len(klines3m) == 0 {
-		return nil, fmt.Errorf("3分钟K线数据为空")
+	if len(klines5m) == 0 {
+		return nil, fmt.Errorf("5分钟K线数据为空")
 	}
 	if len(klines4h) == 0 {
 		return nil, fmt.Errorf("4小时K线数据为空")
 	}
 
-	// 计算当前指标 (基于3分钟最新数据)
-	currentPrice := klines3m[len(klines3m)-1].Close
-	currentEMA20 := calculateEMA(klines3m, 20)
-	currentMACD := calculateMACD(klines3m)
-	currentRSI7 := calculateRSI(klines3m, 7)
+	// 计算当前指标 (基于5分钟最新数据)
+	currentPrice := klines5m[len(klines5m)-1].Close
+	currentEMA20 := calculateEMA(klines5m, 20)
+	currentMACD := calculateMACD(klines5m)
+	currentRSI7 := calculateRSI(klines5m, 7)
 	// 计算KDJ指标
-	currentKDJ := calculateKDJ(klines3m, 9)
+	currentKDJ := calculateKDJ(klines5m, 9)
 	// 计算DMI指标
-	currentDMI := calculateDMI(klines3m, 14)
+	currentDMI := calculateDMI(klines5m, 14)
+
+	// 计算4小时时间框架的指标
+	hourlyEMA20 := calculateEMA(klines4h, 20)
+	hourlyMACD := calculateMACD(klines4h)
+	hourlyRSI7 := calculateRSI(klines4h, 7)
+	hourlyRSI14 := calculateRSI(klines4h, 14)
+	hourlyKDJ := calculateKDJ(klines4h, 9)
+	hourlyDMI := calculateDMI(klines4h, 14)
 
 	// 计算价格变化百分比
-	// 1小时价格变化 = 20个3分钟K线前的价格
+	// 1小时价格变化 = 12个5分钟K线前的价格
 	priceChange1h := 0.0
-	if len(klines3m) >= 21 { // 至少需要21根K线 (当前 + 20根前)
-		price1hAgo := klines3m[len(klines3m)-21].Close
+	if len(klines5m) >= 13 { // 至少需要13根K线 (当前 + 12根前)
+		price1hAgo := klines5m[len(klines5m)-13].Close
 		if price1hAgo > 0 {
 			priceChange1h = ((currentPrice - price1hAgo) / price1hAgo) * 100
 		}
@@ -91,7 +99,7 @@ func Get(symbol string) (*Data, error) {
 	fundingRate, _ := getFundingRate(symbol)
 
 	// 计算日内系列数据
-	intradayData := calculateIntradaySeries(klines3m)
+	intradayData := calculateIntradaySeries(klines5m)
 
 	// 计算长期数据
 	longerTermData := calculateLongerTermData(klines4h)
@@ -106,6 +114,12 @@ func Get(symbol string) (*Data, error) {
 		CurrentRSI7:       currentRSI7,
 		CurrentKDJ:        currentKDJ,
 		CurrentDMI:        currentDMI,
+		HourlyEMA20:       hourlyEMA20,
+		HourlyMACD:        hourlyMACD,
+		HourlyRSI7:        hourlyRSI7,
+		HourlyRSI14:       hourlyRSI14,
+		HourlyKDJ:         hourlyKDJ,
+		HourlyDMI:         hourlyDMI,
 		OpenInterest:      oiData,
 		FundingRate:       fundingRate,
 		IntradaySeries:    intradayData,
@@ -590,6 +604,10 @@ func calculateLongerTermData(klines []Kline) *LongerTermData {
 			macd := calculateMACD(klines[:i+1])
 			data.MACDValues = append(data.MACDValues, macd)
 		}
+		if i >= 7 {
+			rsi7 := calculateRSI(klines[:i+1], 7)
+			data.RSI7Values = append(data.RSI7Values, rsi7)
+		}
 		if i >= 14 {
 			rsi14 := calculateRSI(klines[:i+1], 14)
 			data.RSI14Values = append(data.RSI14Values, rsi14)
@@ -712,6 +730,15 @@ func Format(data *Data) string {
 	sb.WriteString(fmt.Sprintf("DMI indicator (14 period): +DI = %.3f, -DI = %.3f, ADX = %.3f\n\n",
 		data.CurrentDMI.PlusDI, data.CurrentDMI.MinusDI, data.CurrentDMI.ADX))
 
+	// 添加4小时时间框架的指标显示
+	sb.WriteString(fmt.Sprintf("4H Timeframe Indicators:\n"))
+	sb.WriteString(fmt.Sprintf("  EMA20 = %.3f, MACD = %.3f\n", data.HourlyEMA20, data.HourlyMACD))
+	sb.WriteString(fmt.Sprintf("  RSI(7) = %.3f, RSI(14) = %.3f\n", data.HourlyRSI7, data.HourlyRSI14))
+	sb.WriteString(fmt.Sprintf("  KDJ: K = %.3f, D = %.3f, J = %.3f\n",
+		data.HourlyKDJ.K, data.HourlyKDJ.D, data.HourlyKDJ.J))
+	sb.WriteString(fmt.Sprintf("  DMI: +DI = %.3f, -DI = %.3f, ADX = %.3f\n\n",
+		data.HourlyDMI.PlusDI, data.HourlyDMI.MinusDI, data.HourlyDMI.ADX))
+
 	sb.WriteString(fmt.Sprintf("In addition, here is the latest %s open interest and funding rate for perps:\n\n",
 		data.Symbol))
 
@@ -726,7 +753,7 @@ func Format(data *Data) string {
 	sb.WriteString(fmt.Sprintf("Funding Rate: %.2e\n\n", data.FundingRate))
 
 	if data.IntradaySeries != nil {
-		sb.WriteString("Intraday series (3‑minute intervals, oldest → latest):\n\n")
+		sb.WriteString("Intraday series (5‑minute intervals, oldest → latest):\n\n")
 
 		if len(data.IntradaySeries.MidPrices) > 0 {
 			sb.WriteString(fmt.Sprintf("Mid prices: %s\n\n", formatFloatSlice(data.IntradaySeries.MidPrices)))
@@ -796,6 +823,10 @@ func Format(data *Data) string {
 
 		if len(data.LongerTermContext.MACDValues) > 0 {
 			sb.WriteString(fmt.Sprintf("MACD indicators: %s\n\n", formatFloatSlice(data.LongerTermContext.MACDValues)))
+		}
+
+		if len(data.LongerTermContext.RSI7Values) > 0 {
+			sb.WriteString(fmt.Sprintf("RSI indicators (7‑Period): %s\n\n", formatFloatSlice(data.LongerTermContext.RSI7Values)))
 		}
 
 		if len(data.LongerTermContext.RSI14Values) > 0 {

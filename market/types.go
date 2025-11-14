@@ -4,15 +4,22 @@ import "time"
 
 // Data 市场数据结构
 type Data struct {
-	Symbol            string
-	CurrentPrice      float64
-	PriceChange1h     float64 // 1小时价格变化百分比
-	PriceChange4h     float64 // 4小时价格变化百分比
-	CurrentEMA20      float64
-	CurrentMACD       float64
-	CurrentRSI7       float64
-	CurrentKDJ        KDJData // KDJ指标
-	CurrentDMI        DMIData // DMI指标
+	Symbol        string
+	CurrentPrice  float64
+	PriceChange1h float64 // 1小时价格变化百分比
+	PriceChange4h float64 // 4小时价格变化百分比
+	CurrentEMA20  float64
+	CurrentMACD   float64
+	CurrentRSI7   float64
+	CurrentKDJ    KDJData // KDJ指标
+	CurrentDMI    DMIData // DMI指标
+	// 4小时时间框架的指标
+	HourlyEMA20       float64
+	HourlyMACD        float64
+	HourlyRSI7        float64
+	HourlyRSI14       float64
+	HourlyKDJ         KDJData
+	HourlyDMI         DMIData
 	OpenInterest      *OIData
 	FundingRate       float64
 	IntradaySeries    *IntradayData
@@ -39,7 +46,7 @@ type OIData struct {
 	Average float64
 }
 
-// IntradayData 日内数据(3分钟间隔)
+// IntradayData 日内数据(5分钟间隔)
 type IntradayData struct {
 	MidPrices   []float64
 	EMA20Values []float64
@@ -59,6 +66,7 @@ type LongerTermData struct {
 	CurrentVolume float64
 	AverageVolume float64
 	MACDValues    []float64
+	RSI7Values    []float64 // 添加RSI7指标序列
 	RSI14Values   []float64
 	KDJValues     []KDJData // KDJ指标序列
 	DMIValues     []DMIData // DMI指标序列
