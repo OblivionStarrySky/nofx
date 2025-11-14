@@ -25,14 +25,14 @@ var (
 
 // Get 获取指定代币的市场数据
 func Get(symbol string) (*Data, error) {
-	var klines5m, klines4h []Kline
+	var klines15m, klines4h []Kline
 	var err error
 	// 标准化symbol
 	symbol = Normalize(symbol)
-	// 获取5分钟K线数据 (最近10个)
-	klines5m, err = WSMonitorCli.GetCurrentKlines(symbol, "5m") // 多获取一些用于计算
+	// 获取15分钟K线数据 (最近10个)
+	klines15m, err = WSMonitorCli.GetCurrentKlines(symbol, "15m") // 多获取一些用于计算
 	if err != nil {
-		return nil, fmt.Errorf("获取5分钟K线失败: %v", err)
+		return nil, fmt.Errorf("获取15分钟K线失败: %v", err)
 	}
 
 	// 获取4小时K线数据 (最近10个)
@@ -42,22 +42,22 @@ func Get(symbol string) (*Data, error) {
 	}
 
 	// 检查数据是否为空
-	if len(klines5m) == 0 {
-		return nil, fmt.Errorf("5分钟K线数据为空")
+	if len(klines15m) == 0 {
+		return nil, fmt.Errorf("15分钟K线数据为空")
 	}
 	if len(klines4h) == 0 {
 		return nil, fmt.Errorf("4小时K线数据为空")
 	}
 
-	// 计算当前指标 (基于5分钟最新数据)
-	currentPrice := klines5m[len(klines5m)-1].Close
-	currentEMA20 := calculateEMA(klines5m, 20)
-	currentMACD := calculateMACD(klines5m)
-	currentRSI7 := calculateRSI(klines5m, 7)
+	// 计算当前指标 (基于15分钟最新数据)
+	currentPrice := klines15m[len(klines15m)-1].Close
+	currentEMA20 := calculateEMA(klines15m, 20)
+	currentMACD := calculateMACD(klines15m)
+	currentRSI7 := calculateRSI(klines15m, 7)
 	// 计算KDJ指标
-	currentKDJ := calculateKDJ(klines5m, 9)
+	currentKDJ := calculateKDJ(klines15m, 9)
 	// 计算DMI指标
-	currentDMI := calculateDMI(klines5m, 14)
+	currentDMI := calculateDMI(klines15m, 14)
 
 	// 计算DOM指标
 	apiClient := NewAPIClient()
@@ -77,10 +77,10 @@ func Get(symbol string) (*Data, error) {
 	hourlyDMI := calculateDMI(klines4h, 14)
 
 	// 计算价格变化百分比
-	// 1小时价格变化 = 12个5分钟K线前的价格
+	// 1小时价格变化 = 4个15分钟K线前的价格
 	priceChange1h := 0.0
-	if len(klines5m) >= 13 { // 至少需要13根K线 (当前 + 12根前)
-		price1hAgo := klines5m[len(klines5m)-13].Close
+	if len(klines15m) >= 5 { // 至少需要5根K线 (当前 + 4根前)
+		price1hAgo := klines15m[len(klines15m)-5].Close
 		if price1hAgo > 0 {
 			priceChange1h = ((currentPrice - price1hAgo) / price1hAgo) * 100
 		}
@@ -108,7 +108,7 @@ func Get(symbol string) (*Data, error) {
 	fundingRate, _ := getFundingRate(symbol)
 
 	// 计算日内系列数据
-	intradayData := calculateIntradaySeries(klines5m)
+	intradayData := calculateIntradaySeries(klines15m)
 
 	// 计算长期数据
 	longerTermData := calculateLongerTermData(klines4h)
@@ -767,7 +767,7 @@ func Format(data *Data) string {
 	sb.WriteString(fmt.Sprintf("Funding Rate: %.2e\n\n", data.FundingRate))
 
 	if data.IntradaySeries != nil {
-		sb.WriteString("Intraday series (5‑minute intervals, oldest → latest):\n\n")
+		sb.WriteString("Intraday series (15‑minute intervals, oldest → latest):\n\n")
 
 		if len(data.IntradaySeries.MidPrices) > 0 {
 			sb.WriteString(fmt.Sprintf("Mid prices: %s\n\n", formatFloatSlice(data.IntradaySeries.MidPrices)))
