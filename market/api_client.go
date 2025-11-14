@@ -172,3 +172,89 @@ func (c *APIClient) GetCurrentPrice(symbol string) (float64, error) {
 
 	return price, nil
 }
+
+// GetOrderBook 获取订单簿数据
+func (c *APIClient) GetOrderBook(symbol string, limit int) (*OrderBook, error) {
+	url := fmt.Sprintf("%s/fapi/v1/depth", baseURL)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	q := req.URL.Query()
+	q.Add("symbol", symbol)
+	q.Add("limit", strconv.Itoa(limit))
+	req.URL.RawQuery = q.Encode()
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var orderBook OrderBook
+	err = json.Unmarshal(body, &orderBook)
+	if err != nil {
+		return nil, err
+	}
+
+	return &orderBook, nil
+}
+
+// CalculateDOM 计算DOM(订单簿深度)指标
+func (c *APIClient) CalculateDOM(symbol string) (DOMData, error) {
+	var dom DOMData
+
+	// 获取订单簿数据，限制为1000档位
+	orderBook, err := c.GetOrderBook(symbol, 1000)
+	if err != nil {
+		return dom, fmt.Errorf("获取订单簿数据失败: %v", err)
+	}
+
+	// 计算买单深度(前10档)
+	bidDepth := 0.0
+	askDepth := 0.0
+
+	// 计算买单深度(最高价前10档)
+	bidLevels := len(orderBook.Bids)
+	if bidLevels > 10 {
+		bidLevels = 10
+	}
+
+	for i := 0; i < bidLevels; i++ {
+		if len(orderBook.Bids[i]) >= 2 {
+			quantity, _ := strconv.ParseFloat(orderBook.Bids[i][1].(string), 64)
+			bidDepth += quantity
+		}
+	}
+
+	// 计算卖单深度(最低价前10档)
+	askLevels := len(orderBook.Asks)
+	if askLevels > 10 {
+		askLevels = 10
+	}
+
+	for i := 0; i < askLevels; i++ {
+		if len(orderBook.Asks[i]) >= 2 {
+			quantity, _ := strconv.ParseFloat(orderBook.Asks[i][1].(string), 64)
+			askDepth += quantity
+		}
+	}
+
+	dom.BidDepth = bidDepth
+	dom.AskDepth = askDepth
+
+	// 计算深度比率
+	if askDepth != 0 {
+		dom.DepthRatio = bidDepth / askDepth
+	} else {
+		dom.DepthRatio = 0
+	}
+
+	return dom, nil
+}

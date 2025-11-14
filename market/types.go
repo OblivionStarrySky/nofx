@@ -14,12 +14,14 @@ type Data struct {
 	CurrentKDJ    KDJData // KDJ指标
 	CurrentDMI    DMIData // DMI指标
 	// 4小时时间框架的指标
-	HourlyEMA20       float64
-	HourlyMACD        float64
-	HourlyRSI7        float64
-	HourlyRSI14       float64
-	HourlyKDJ         KDJData
-	HourlyDMI         DMIData
+	HourlyEMA20 float64
+	HourlyMACD  float64
+	HourlyRSI7  float64
+	HourlyRSI14 float64
+	HourlyKDJ   KDJData
+	HourlyDMI   DMIData
+	// DOM指标
+	DOMData           DOMData
 	OpenInterest      *OIData
 	FundingRate       float64
 	IntradaySeries    *IntradayData
@@ -38,6 +40,13 @@ type DMIData struct {
 	PlusDI  float64
 	MinusDI float64
 	ADX     float64
+}
+
+// DOMData DOM(订单簿深度)指标数据
+type DOMData struct {
+	BidDepth   float64 // 买单深度
+	AskDepth   float64 // 卖单深度
+	DepthRatio float64 // 深度比率 (买单深度/卖单深度)
 }
 
 // OIData Open Interest数据
@@ -114,6 +123,12 @@ type Ticker24hr struct {
 	PriceChangePercent string `json:"priceChangePercent"`
 	Volume             string `json:"volume"`
 	QuoteVolume        string `json:"quoteVolume"`
+}
+
+// OrderBook 订单簿数据
+type OrderBook struct {
+	Bids [][]interface{} `json:"bids"` // 买单 [价格, 数量]
+	Asks [][]interface{} `json:"asks"` // 卖单 [价格, 数量]
 }
 
 // 特征数据结构

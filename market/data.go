@@ -59,6 +59,15 @@ func Get(symbol string) (*Data, error) {
 	// 计算DMI指标
 	currentDMI := calculateDMI(klines5m, 14)
 
+	// 计算DOM指标
+	apiClient := NewAPIClient()
+	domData, err := apiClient.CalculateDOM(symbol)
+	if err != nil {
+		// DOM计算失败不影响整体,使用默认值
+		domData = DOMData{BidDepth: 0, AskDepth: 0, DepthRatio: 0}
+		fmt.Printf("⚠️ 获取 %s 的DOM数据失败: %v\n", symbol, err)
+	}
+
 	// 计算4小时时间框架的指标
 	hourlyEMA20 := calculateEMA(klines4h, 20)
 	hourlyMACD := calculateMACD(klines4h)
@@ -114,6 +123,7 @@ func Get(symbol string) (*Data, error) {
 		CurrentRSI7:       currentRSI7,
 		CurrentKDJ:        currentKDJ,
 		CurrentDMI:        currentDMI,
+		DOMData:           domData,
 		HourlyEMA20:       hourlyEMA20,
 		HourlyMACD:        hourlyMACD,
 		HourlyRSI7:        hourlyRSI7,
@@ -729,6 +739,10 @@ func Format(data *Data) string {
 		data.CurrentKDJ.K, data.CurrentKDJ.D, data.CurrentKDJ.J))
 	sb.WriteString(fmt.Sprintf("DMI indicator (14 period): +DI = %.3f, -DI = %.3f, ADX = %.3f\n\n",
 		data.CurrentDMI.PlusDI, data.CurrentDMI.MinusDI, data.CurrentDMI.ADX))
+
+	// 添加DOM指标显示
+	sb.WriteString(fmt.Sprintf("DOM indicator: Bid Depth = %.2f, Ask Depth = %.2f, Depth Ratio = %.3f\n\n",
+		data.DOMData.BidDepth, data.DOMData.AskDepth, data.DOMData.DepthRatio))
 
 	// 添加4小时时间框架的指标显示
 	sb.WriteString(fmt.Sprintf("4H Timeframe Indicators:\n"))
